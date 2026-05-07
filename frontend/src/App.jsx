@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS = {
 
 function toChatMessage(role, content, extra = {}) {
   return {
-    id: crypto.randomUUID(),
+    id: globalThis.crypto?.randomUUID?.() || `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     role,
     content,
     createdAt: new Date().toISOString(),
