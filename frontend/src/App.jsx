@@ -14,7 +14,6 @@ import {
   saveSettings,
   setAuthToken,
   sendChat,
-  streamChat,
   uploadFiles,
   updateConversation
 } from "./api/client.js";
@@ -231,7 +230,10 @@ export default function App() {
     setError("");
     setLoading(true);
 
-    const displayContent = `${content}${attachments.length ? `\n\nFile đính kèm:\n${attachments.map((file) => `- ${file.name}`).join("\n")}` : ""}`;
+    const attachmentList = attachments.length
+      ? "\n\nFile dinh kem:\n" + attachments.map((file) => `- ${file.name}`).join("\n")
+      : "";
+    const displayContent = `${content}${attachmentList}`;
     const userMessage = toChatMessage("user", displayContent, {
       model: selectedModel,
       promptContent: content,
@@ -240,127 +242,36 @@ export default function App() {
     const outgoingMessages = [...messages, userMessage];
     setMessages(outgoingMessages);
 
-    if (!isAdmin) {
-      try {
-        const response = await sendChat({
-          conversationId: activeConversationId || undefined,
-          model: selectedModel,
-          systemInstruction,
-          messages: outgoingMessages.map(({ role, content: messageContent, promptContent, attachments: messageAttachments }) => ({
-            role,
-            content: promptContent || messageContent,
-            displayContent: messageContent,
-            attachments: messageAttachments || []
-          })),
-          temperature: settings.temperature,
-          stream: false
-        });
-        const assistantMessage = toChatMessage("assistant", response.content, { model: response.model });
-        setActiveConversationId(response.conversationId);
-        setMessages([...outgoingMessages, assistantMessage]);
-        await refreshConversations(response.conversationId);
-      } catch (clientError) {
-        const errorMessage = clientError.response?.data?.error || clientError.message || "Khong gui duoc tin nhan.";
-        setError(errorMessage);
-        setMessages([
-          ...outgoingMessages,
-          toChatMessage("assistant", `He thong chua lay duoc cau tra loi tu AI. ${errorMessage}`, { model: "system-error" })
-        ]);
-      } finally {
-        setLoading(false);
-        abortControllerRef.current = null;
-      }
-      return;
-    }
-
-    const assistantMessage = toChatMessage("assistant", "", { model: selectedModel, streaming: true });
-    setMessages([...outgoingMessages, assistantMessage]);
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
     try {
-      await streamChat(
-        {
-          conversationId: activeConversationId || undefined,
-          model: selectedModel,
-          systemInstruction,
-          messages: outgoingMessages.map(({ role, content: messageContent, promptContent, attachments: messageAttachments }) => ({
-            role,
-            content: promptContent || messageContent,
-            displayContent: messageContent,
-            attachments: messageAttachments || []
-          })),
-          temperature: settings.temperature,
-          stream: true
-        },
-        {
-          signal: controller.signal,
-          onMeta: ({ conversationId }) => {
-            if (conversationId && !activeConversationId) setActiveConversationId(conversationId);
-          },
-          onToken: (token) => {
-            setMessages((items) =>
-              items.map((item) =>
-                item.id === assistantMessage.id
-                  ? { ...item, content: `${item.content}${token}` }
-                  : item
-              )
-            );
-          },
-          onDone: async ({ conversationId }) => {
-            const resolvedConversationId = conversationId || activeConversationId;
-            setMessages((items) =>
-              items.map((item) =>
-                item.id === assistantMessage.id ? { ...item, streaming: false } : item
-              )
-            );
-            if (resolvedConversationId) {
-              const savedMessages = await fetchMessages(resolvedConversationId);
-              setMessages(savedMessages);
-            }
-            await refreshConversations(resolvedConversationId);
-          }
-        }
-      );
-    } catch (streamError) {
-      if (streamError.name === "AbortError") {
-        setMessages((items) =>
-          items.map((item) =>
-            item.id === assistantMessage.id
-              ? { ...item, content: item.content || "Generation stopped.", streaming: false }
-              : item
-          )
-        );
-      } else {
-        try {
-          const fallback = await sendChat({
-            conversationId: activeConversationId || undefined,
-            model: selectedModel,
-            systemInstruction,
-            messages: outgoingMessages.map(({ role, content: messageContent, promptContent, attachments: messageAttachments }) => ({
-              role,
-              content: promptContent || messageContent,
-              displayContent: messageContent,
-              attachments: messageAttachments || []
-            })),
-            temperature: settings.temperature,
-            stream: false
-          });
-          setActiveConversationId(fallback.conversationId);
-          setMessages([...outgoingMessages, toChatMessage("assistant", fallback.content, { model: fallback.model })]);
-          await refreshConversations(fallback.conversationId);
-        } catch (fallbackError) {
-          setError(fallbackError.response?.data?.error || fallbackError.message || "Không gửi được tin nhắn.");
-          setMessages(outgoingMessages);
-        }
-      }
+      const response = await sendChat({
+        conversationId: activeConversationId || undefined,
+        model: selectedModel,
+        systemInstruction,
+        messages: outgoingMessages.map(({ role, content: messageContent, promptContent, attachments: messageAttachments }) => ({
+          role,
+          content: promptContent || messageContent,
+          displayContent: messageContent,
+          attachments: messageAttachments || []
+        })),
+        temperature: settings.temperature,
+        stream: false
+      });
+      const assistantMessage = toChatMessage("assistant", response.content || "", { model: response.model });
+      setActiveConversationId(response.conversationId);
+      setMessages([...outgoingMessages, assistantMessage]);
+      await refreshConversations(response.conversationId);
+    } catch (chatError) {
+      const errorMessage = chatError.response?.data?.error || chatError.message || "Khong gui duoc tin nhan.";
+      setError(errorMessage);
+      setMessages([
+        ...outgoingMessages,
+        toChatMessage("assistant", `He thong chua lay duoc cau tra loi tu AI. ${errorMessage}`, { model: "system-error" })
+      ]);
     } finally {
       setLoading(false);
       abortControllerRef.current = null;
     }
   }
-
   function handleStop() {
     abortControllerRef.current?.abort();
     setLoading(false);
