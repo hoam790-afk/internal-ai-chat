@@ -100,7 +100,7 @@ export async function saveAnswer(payload, id) {
 }
 
 export async function sendChat(payload) {
-  const { data } = await api.post("/chat", payload, { timeout: 180000 });
+  const { data } = await api.post("/chat", { ...payload, stream: false }, { timeout: 180000 });
   return data.data;
 }
 
