@@ -36,10 +36,10 @@ const chatSchema = z.object({
   stream: z.boolean().optional().default(false)
 });
 
-const maxCompletionTokens = Number(process.env.MAX_COMPLETION_TOKENS || 6000);
+const maxCompletionTokens = Math.max(Number(process.env.MAX_COMPLETION_TOKENS || 9000), 9000);
 const shipmentExtractionModel = process.env.SHIPMENT_EXTRACTION_MODEL || "openrouter/auto";
-const openRouterTimeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS || 20000);
-const maxContinuationRounds = Number(process.env.MAX_CONTINUATION_ROUNDS || 2);
+const openRouterTimeoutMs = Math.max(Number(process.env.OPENROUTER_TIMEOUT_MS || 60000), 60000);
+const maxContinuationRounds = Math.max(Number(process.env.MAX_CONTINUATION_ROUNDS || 4), 4);
 const fallbackModels = (process.env.FALLBACK_MODELS ||
   "google/gemma-4-26b-a4b-it:free,openrouter/free,inclusionai/ling-2.6-1t:free,liquid/lfm-2.5-1.2b-instruct:free")
   .split(",")
@@ -273,6 +273,34 @@ function isTruncatedFinishReason(reason) {
   return ["length", "max_tokens", "token_limit"].includes(String(reason || "").toLowerCase());
 }
 
+function looksIncompleteAnswer(content = "") {
+  const text = content.trim();
+  if (!text) return true;
+
+  const tail = text.slice(-700).toLowerCase();
+  const hasClosingSignal = [
+    "kết luận",
+    "ket luan",
+    "tóm lại",
+    "tom lai",
+    "lưu ý cuối",
+    "luu y cuoi",
+    "khuyến nghị",
+    "khuyen nghi",
+    "trên đây",
+    "tren day"
+  ].some((marker) => tail.includes(marker));
+  const endsCleanly = /[.!?。)”"'`*]$/.test(text);
+  const danglingListOrSentence = /(\n\s*[-*]\s*|\n\s*\d+\.\s*|[:;,]|\b(và|hoặc|gồm|như|theo|với|của|cho|là|and|or)\s*)$/i.test(text);
+  const requiredCoverage = [
+    /hs\s*code|mã\s*hs/i,
+    /thuế|vat|gtgt/i,
+    /chính sách|giấy phép|kiểm tra|quản lý|nhãn|sở hữu/i
+  ].filter((pattern) => pattern.test(text)).length;
+
+  return !endsCleanly || danglingListOrSentence || !hasClosingSignal || requiredCoverage < 2;
+}
+
 function mergeUsage(total = {}, next = {}) {
   return {
     prompt_tokens: (total.prompt_tokens || 0) + (next.prompt_tokens || 0),
@@ -290,16 +318,21 @@ async function completeChatWithContinuation(requestBody) {
   let usage = payload.usage || null;
   let usedModel = payload.model || response.usedModel || requestBody.model;
 
-  for (let round = 0; round < maxContinuationRounds && isTruncatedFinishReason(finishReason); round += 1) {
+  for (
+    let round = 0;
+    round < maxContinuationRounds && (isTruncatedFinishReason(finishReason) || looksIncompleteAnswer(assistantContent));
+    round += 1
+  ) {
     const continuationMessages = [
       ...requestBody.messages,
       { role: "assistant", content: assistantContent },
       {
         role: "user",
         content: [
-          "Cau tra loi vua bi cat do gioi han token.",
+          "Cau tra loi vua roi chua hoan tat hoac bi cat ngang.",
           "Hay viet tiep tu dung noi dung dang dang do, khong lap lai phan da tra loi.",
           "Phai hoan thanh day du cac muc trong system instruction/prompts, dac biet: HS code, hang cam, giay phep, kiem tra chat luong/kiem dich/ATTP, nhan hang hoa, so huu tri tue, va tong ket neu phu hop.",
+          "Neu cau hoi co hoi thue/VAT, bat buoc neu thue NK uu dai neu xac dinh duoc, VAT/GTGT va can cu ap dung hoac luu y can tra cuu bieu thue hien hanh.",
           "Ket thuc bang cau ket luan ro rang."
         ].join("\n")
       }
