@@ -124,36 +124,18 @@ export async function streamChat(payload, { signal, onMeta, onToken, onDone }) {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
-    body: JSON.stringify({ ...payload, stream: true }),
+    body: JSON.stringify({ ...payload, stream: false }),
     signal
   });
 
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
     const errorPayload = await response.json().catch(() => ({}));
-    throw new Error(errorPayload.error || "Không thể stream phản hồi từ AI.");
+    throw new Error(errorPayload.error || "Khong the lay phan hoi tu AI.");
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const events = buffer.split("\n\n");
-    buffer = events.pop() || "";
-
-    events.forEach((eventBlock) => {
-      const event = eventBlock.match(/^event:\s*(.+)$/m)?.[1];
-      const dataLine = eventBlock.match(/^data:\s*(.+)$/m)?.[1];
-      if (!event || !dataLine) return;
-
-      const data = JSON.parse(dataLine);
-      if (event === "meta") onMeta?.(data);
-      if (event === "token") onToken?.(data.token);
-      if (event === "done") onDone?.(data);
-    });
-  }
+  const result = await response.json();
+  const data = result.data || {};
+  onMeta?.({ conversationId: data.conversationId });
+  onToken?.(data.content || "");
+  await onDone?.({ conversationId: data.conversationId, messageId: data.messageId });
 }
