@@ -429,11 +429,6 @@ router.post("/", requireAuth, chatRateLimit, async (req, res) => {
         temperature,
         max_tokens: maxCompletionTokens
       };
-      const response = await callOpenRouterWithFallback({
-        ...requestBody,
-        stream: true
-      });
-
       res.writeHead(200, {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
@@ -441,6 +436,29 @@ router.post("/", requireAuth, chatRateLimit, async (req, res) => {
       });
       res.write(`event: meta\ndata: ${JSON.stringify({ conversationId })}\n\n`);
 
+      const completed = await completeChatWithContinuation(requestBody);
+      let assistantContent = completed.assistantContent || "";
+      if (!assistantContent.trim()) {
+        assistantContent = "OpenRouter da phan hoi nhung khong tra noi dung. Vui long gui lai cau hoi hoac doi model mac dinh trong trang admin.";
+      }
+
+      const chunks = assistantContent.match(/[\s\S]{1,120}/g) || [assistantContent];
+      for (const chunk of chunks) {
+        res.write(`event: token\ndata: ${JSON.stringify({ token: chunk })}\n\n`);
+      }
+
+      const messageId = createMessage({
+        conversationId,
+        role: "assistant",
+        content: assistantContent,
+        model: completed.model || model,
+        tokenInput: completed.usage?.prompt_tokens,
+        tokenOutput: completed.usage?.completion_tokens
+      });
+      res.write(`event: done\ndata: ${JSON.stringify({ conversationId, messageId })}\n\n`);
+      return res.end();
+
+      {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -522,6 +540,7 @@ router.post("/", requireAuth, chatRateLimit, async (req, res) => {
       });
       res.write(`event: done\ndata: ${JSON.stringify({ conversationId, messageId })}\n\n`);
       return res.end();
+      }
     }
 
     const completed = await completeChatWithContinuation({

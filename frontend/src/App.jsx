@@ -241,38 +241,69 @@ export default function App() {
     setMessages(outgoingMessages);
 
     if (!isAdmin) {
+      const assistantMessage = toChatMessage("assistant", "", { model: selectedModel, streaming: true });
+      setMessages([...outgoingMessages, assistantMessage]);
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       try {
-        const response = await sendChat({
-          conversationId: activeConversationId || undefined,
-          model: selectedModel,
-          systemInstruction,
-          messages: outgoingMessages.map(({ role, content: messageContent, promptContent, attachments: messageAttachments }) => ({
-            role,
-            content: promptContent || messageContent,
-            displayContent: messageContent,
-            attachments: messageAttachments || []
-          })),
-          temperature: settings.temperature,
-          stream: false
-        });
-        const nextConversationId = response.conversationId;
-        setActiveConversationId(nextConversationId);
-        if (nextConversationId) {
-          const savedMessages = await fetchMessages(nextConversationId);
-          setMessages(savedMessages);
-        } else {
-          setMessages([...outgoingMessages, toChatMessage("assistant", response.content, { model: response.model })]);
-        }
-        await refreshConversations(nextConversationId);
+        await streamChat(
+          {
+            conversationId: activeConversationId || undefined,
+            model: selectedModel,
+            systemInstruction,
+            messages: outgoingMessages.map(({ role, content: messageContent, promptContent, attachments: messageAttachments }) => ({
+              role,
+              content: promptContent || messageContent,
+              displayContent: messageContent,
+              attachments: messageAttachments || []
+            })),
+            temperature: settings.temperature,
+            stream: true
+          },
+          {
+            signal: controller.signal,
+            onMeta: ({ conversationId }) => {
+              if (conversationId && !activeConversationId) setActiveConversationId(conversationId);
+            },
+            onToken: (token) => {
+              setMessages((items) =>
+                items.map((item) =>
+                  item.id === assistantMessage.id
+                    ? { ...item, content: `${item.content}${token}` }
+                    : item
+                )
+              );
+            },
+            onDone: async ({ conversationId }) => {
+              const resolvedConversationId = conversationId || activeConversationId;
+              setMessages((items) =>
+                items.map((item) =>
+                  item.id === assistantMessage.id ? { ...item, streaming: false } : item
+                )
+              );
+              if (resolvedConversationId) {
+                const savedMessages = await fetchMessages(resolvedConversationId);
+                setMessages(savedMessages);
+              }
+              await refreshConversations(resolvedConversationId);
+            }
+          }
+        );
       } catch (clientError) {
-        const errorMessage = clientError.response?.data?.error || clientError.message || "Khong gui duoc tin nhan.";
+        const errorMessage = clientError.message || "Khong gui duoc tin nhan.";
         setError(errorMessage);
-        setMessages([
-          ...outgoingMessages,
-          toChatMessage("assistant", `Hệ thống chưa lấy được câu trả lời từ AI. ${errorMessage}`, { model: "system-error" })
-        ]);
+        setMessages((items) =>
+          items.map((item) =>
+            item.id === assistantMessage.id
+              ? { ...item, content: item.content || `He thong chua lay duoc cau tra loi tu AI. ${errorMessage}`, model: "system-error", streaming: false }
+              : item
+          )
+        );
       } finally {
         setLoading(false);
+        abortControllerRef.current = null;
       }
       return;
     }
