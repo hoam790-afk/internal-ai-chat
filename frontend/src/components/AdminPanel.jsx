@@ -1,6 +1,14 @@
-import { RefreshCw, Save } from "lucide-react";
+import { RefreshCw, Save, Users } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fetchAdminQa, fetchSavedAnswers, saveAnswer } from "../api/client.js";
+import {
+  fetchAdminMembers,
+  fetchAdminPlans,
+  fetchAdminQa,
+  fetchSavedAnswers,
+  saveAnswer,
+  updateAdminPlan,
+  updateMemberSubscription
+} from "../api/client.js";
 
 export default function AdminPanel({ open }) {
   const [qaRows, setQaRows] = useState([]);
@@ -10,15 +18,25 @@ export default function AdminPanel({ open }) {
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState("qa");
+  const [members, setMembers] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [notice, setNotice] = useState("");
   const [saveError, setSaveError] = useState("");
 
   async function loadData() {
     setLoading(true);
     try {
-      const [qa, saved] = await Promise.all([fetchAdminQa(), fetchSavedAnswers()]);
+      const [qa, saved, memberRows, planRows] = await Promise.all([
+        fetchAdminQa(),
+        fetchSavedAnswers(),
+        fetchAdminMembers(),
+        fetchAdminPlans()
+      ]);
       setQaRows(qa);
       setSavedAnswers(saved);
+      setMembers(memberRows);
+      setPlans(planRows);
     } finally {
       setLoading(false);
     }
@@ -51,6 +69,17 @@ export default function AdminPanel({ open }) {
     }
   }
 
+  async function handlePlanChange(plan, field, value) {
+    const payload = { [field]: value };
+    await updateAdminPlan(plan.id, payload);
+    setPlans(await fetchAdminPlans());
+  }
+
+  async function handleMemberPlan(member, planId) {
+    await updateMemberSubscription(member.id, { planId });
+    setMembers(await fetchAdminMembers());
+  }
+
   return (
     <section className="flex h-full min-h-0 flex-1 bg-slate-50">
       <aside className="chat-scrollbar w-[420px] shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4">
@@ -69,7 +98,24 @@ export default function AdminPanel({ open }) {
           </button>
         </div>
 
-        <div className="space-y-2">
+        <div className="mb-4 grid grid-cols-2 gap-2 rounded-md bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => setTab("qa")}
+            className={`rounded px-3 py-2 text-sm font-semibold ${tab === "qa" ? "bg-white text-red-700 shadow-sm" : "text-slate-600"}`}
+          >
+            Q&A
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("members")}
+            className={`rounded px-3 py-2 text-sm font-semibold ${tab === "members" ? "bg-white text-red-700 shadow-sm" : "text-slate-600"}`}
+          >
+            Thành viên
+          </button>
+        </div>
+
+        {tab === "qa" ? <div className="space-y-2">
           {qaRows.map((row) => (
             <button
               key={`${row.questionMessageId}-${row.answerMessageId || "none"}`}
@@ -92,11 +138,118 @@ export default function AdminPanel({ open }) {
               </div>
             </button>
           ))}
-        </div>
+        </div> : <div className="space-y-2">
+          {members.map((member) => (
+            <button
+              key={member.id}
+              type="button"
+              className="w-full rounded-md border border-slate-200 px-3 py-3 text-left text-sm hover:bg-slate-50"
+            >
+              <div className="font-semibold text-slate-900">{member.email || member.name}</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {member.planName || "Chưa có gói"} · hôm nay {member.usedToday || 0}
+                {member.isUnlimited ? " / không giới hạn" : ` / ${member.questionLimitDaily || 5}`}
+              </div>
+            </button>
+          ))}
+        </div>}
       </aside>
 
       <div className="chat-scrollbar min-w-0 flex-1 overflow-y-auto p-5">
-        {active ? (
+        {tab === "members" ? (
+          <div className="mx-auto max-w-6xl space-y-5">
+            <div className="rounded-md border border-slate-200 bg-white p-4">
+              <div className="mb-4 flex items-center gap-2">
+                <Users className="h-5 w-5 text-red-700" />
+                <h2 className="text-lg font-bold text-slate-950">Quản lý thành viên</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="py-2">Thành viên</th>
+                      <th>Gói</th>
+                      <th>Hạn</th>
+                      <th>Hôm nay</th>
+                      <th>Đổi gói</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((member) => (
+                      <tr key={member.id} className="border-b border-slate-100">
+                        <td className="py-3">
+                          <div className="font-semibold text-slate-900">{member.email || member.name}</div>
+                          <div className="text-xs text-slate-500">{member.id}</div>
+                        </td>
+                        <td>{member.planName || "Cơ bản"}</td>
+                        <td>{member.expiresAt ? new Date(member.expiresAt).toLocaleDateString("vi-VN") : "Không có"}</td>
+                        <td>
+                          {member.usedToday || 0}
+                          {member.isUnlimited ? " / không giới hạn" : ` / ${member.questionLimitDaily || 5}`}
+                        </td>
+                        <td>
+                          <select
+                            value={member.planId || "basic"}
+                            onChange={(event) => handleMemberPlan(member, event.target.value)}
+                            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                          >
+                            {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              {plans.map((plan) => (
+                <div key={plan.id} className="rounded-md border border-slate-200 bg-white p-4">
+                  <h3 className="text-base font-bold text-slate-950">{plan.name}</h3>
+                  <label className="mt-3 block text-xs font-semibold uppercase text-slate-500">Giá VND/user</label>
+                  <input
+                    type="number"
+                    defaultValue={plan.priceVnd}
+                    onBlur={(event) => handlePlanChange(plan, "priceVnd", Number(event.target.value))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                  <label className="mt-3 block text-xs font-semibold uppercase text-slate-500">Thời hạn ngày</label>
+                  <input
+                    type="number"
+                    defaultValue={plan.billingPeriodDays}
+                    onBlur={(event) => handlePlanChange(plan, "billingPeriodDays", Number(event.target.value))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                  <label className="mt-3 block text-xs font-semibold uppercase text-slate-500">Giới hạn câu/ngày</label>
+                  <input
+                    type="number"
+                    disabled={Boolean(plan.isUnlimited)}
+                    defaultValue={plan.questionLimitDaily || ""}
+                    onBlur={(event) => handlePlanChange(plan, "questionLimitDaily", event.target.value ? Number(event.target.value) : null)}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
+                  />
+                  <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      defaultChecked={Boolean(plan.isUnlimited)}
+                      onChange={(event) => handlePlanChange(plan, "isUnlimited", event.target.checked)}
+                    />
+                    Không giới hạn câu hỏi
+                  </label>
+                  <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      defaultChecked={Boolean(plan.includesLawyerReview)}
+                      onChange={(event) => handlePlanChange(plan, "includesLawyerReview", event.target.checked)}
+                    />
+                    Có luật sư review
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : active ? (
           <div className="mx-auto max-w-4xl space-y-4">
             {notice && <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div>}
             {saveError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{saveError}</div>}

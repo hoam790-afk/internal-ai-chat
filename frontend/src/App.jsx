@@ -7,6 +7,7 @@ import {
   fetchModels,
   fetchSettings,
   fetchAuthConfig,
+  fetchBillingStatus,
   adminLogin,
   clientEmailLogin,
   googleLogin,
@@ -15,7 +16,9 @@ import {
   setAuthToken,
   sendChat,
   uploadFiles,
-  updateConversation
+  updateConversation,
+  createCheckout,
+  confirmPayment
 } from "./api/client.js";
 import ChatWindow from "./components/ChatWindow.jsx";
 import SettingsPanel from "./components/SettingsPanel.jsx";
@@ -23,6 +26,7 @@ import Sidebar from "./components/Sidebar.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
 import ClientSidebar from "./components/ClientSidebar.jsx";
+import BillingPanel from "./components/BillingPanel.jsx";
 
 const DEFAULT_SETTINGS = {
   defaultModel: "openrouter/free",
@@ -54,6 +58,8 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
+  const [billingStatus, setBillingStatus] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [error, setError] = useState("");
   const [authConfig, setAuthConfig] = useState(null);
@@ -84,6 +90,9 @@ export default function App() {
           fetchModels(),
           fetchConversations()
         ]);
+        if (user.role === "client") {
+          fetchBillingStatus().then(setBillingStatus).catch(() => {});
+        }
         setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings });
         setSelectedModel(loadedSettings.defaultModel || DEFAULT_SETTINGS.defaultModel);
         setSystemInstruction(loadedSettings.defaultSystemInstruction || DEFAULT_SETTINGS.defaultSystemInstruction);
@@ -260,8 +269,13 @@ export default function App() {
       setActiveConversationId(response.conversationId);
       setMessages([...outgoingMessages, assistantMessage]);
       await refreshConversations(response.conversationId);
+      if (!isAdmin) fetchBillingStatus().then(setBillingStatus).catch(() => {});
     } catch (chatError) {
       const errorMessage = chatError.response?.data?.error || chatError.message || "Khong gui duoc tin nhan.";
+      if (chatError.response?.status === 402) {
+        setBillingStatus(chatError.response.data.billing);
+        setBillingOpen(true);
+      }
       setError(errorMessage);
       setMessages([
         ...outgoingMessages,
@@ -340,6 +354,8 @@ export default function App() {
           onSelectConversation={handleSelectConversation}
           onNewChat={handleNewChat}
           onLogout={handleLogout}
+          billingStatus={billingStatus}
+          onOpenBilling={() => setBillingOpen(true)}
         />
       )}
 
@@ -401,6 +417,8 @@ export default function App() {
             onUploadFiles={uploadFiles}
             isAdmin={isAdmin}
             onLogout={handleLogout}
+            billingStatus={billingStatus}
+            onOpenBilling={() => setBillingOpen(true)}
           />
         )}
       </div>
@@ -413,6 +431,14 @@ export default function App() {
         onChange={setSettings}
         onSave={handleSaveSettings}
         saving={savingSettings}
+      />
+      <BillingPanel
+        open={billingOpen}
+        onClose={() => setBillingOpen(false)}
+        billingStatus={billingStatus}
+        onCheckout={createCheckout}
+        onConfirmPayment={confirmPayment}
+        onRefresh={() => fetchBillingStatus().then(setBillingStatus)}
       />
     </div>
   );

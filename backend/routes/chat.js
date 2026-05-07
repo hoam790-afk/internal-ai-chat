@@ -5,6 +5,7 @@ import { createMessage, db, DEMO_USER_ID } from "../db.js";
 import { getRequestUser, requireAuth, resolveUserId } from "../middleware/auth.js";
 import { chatRateLimit } from "../middleware/rateLimit.js";
 import { findSavedAnswer } from "../utils/answers.js";
+import { assertCanAsk, incrementUsage } from "../utils/billing.js";
 
 const router = express.Router();
 
@@ -373,6 +374,15 @@ router.post("/", requireAuth, chatRateLimit, async (req, res) => {
     return res.status(400).json({ error: "Cần ít nhất một tin nhắn user." });
   }
 
+  const quota = assertCanAsk(requestUser);
+  if (!quota.allowed) {
+    return res.status(402).json({
+      error: quota.message,
+      code: quota.reason,
+      billing: quota.billing
+    });
+  }
+
   let conversationId;
   try {
     conversationId = ensureConversation({
@@ -398,6 +408,7 @@ router.post("/", requireAuth, chatRateLimit, async (req, res) => {
         content: savedAnswer.answer,
         model: "saved-answer"
       });
+      if (requestUser?.role !== "admin") incrementUsage(userId);
 
       if (stream) {
         res.writeHead(200, {
@@ -480,6 +491,7 @@ router.post("/", requireAuth, chatRateLimit, async (req, res) => {
         tokenInput: completed.usage?.prompt_tokens,
         tokenOutput: completed.usage?.completion_tokens
       });
+      if (requestUser?.role !== "admin") incrementUsage(userId);
       res.write(`event: done\ndata: ${JSON.stringify({ conversationId, messageId })}\n\n`);
       return res.end();
 
@@ -587,6 +599,7 @@ router.post("/", requireAuth, chatRateLimit, async (req, res) => {
       tokenInput: completed.usage?.prompt_tokens,
       tokenOutput: completed.usage?.completion_tokens
     });
+    if (requestUser?.role !== "admin") incrementUsage(userId);
 
     res.json({
       data: {

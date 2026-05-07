@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
 import { db, DEMO_USER_ID } from "../db.js";
+import { ensureUserAccount } from "../utils/billing.js";
 
 const jwtSecret = process.env.JWT_SECRET || "dev-only-change-me";
 
@@ -52,6 +53,7 @@ export function resolveUserId(req) {
     INSERT OR IGNORE INTO users (id, name, email)
     VALUES (?, ?, ?)
   `).run(user.id, user.name || user.email, user.email);
+  ensureUserAccount(user);
 
   const settings = db.prepare("SELECT id FROM settings WHERE user_id = ?").get(user.id);
   if (!settings) {

@@ -17,7 +17,9 @@ export default function ChatWindow({
   onOpenMobileSidebar,
   onUploadFiles,
   isAdmin = true,
-  onLogout
+  onLogout,
+  billingStatus,
+  onOpenBilling
 }) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState([]);
@@ -117,6 +119,21 @@ export default function ChatWindow({
         {!isAdmin && (
           <button
             type="button"
+            onClick={onOpenBilling}
+            className="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 sm:inline-flex"
+            title="Gói dịch vụ"
+          >
+            {billingStatus?.subscription?.planName || "Gói dịch vụ"}
+            {billingStatus?.usage?.limitToday != null && (
+              <span className="ml-1 text-red-500">
+                {billingStatus.usage.remainingToday}/{billingStatus.usage.limitToday}
+              </span>
+            )}
+          </button>
+        )}
+        {!isAdmin && (
+          <button
+            type="button"
             onClick={onLogout}
             className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100"
             title="Logout"
@@ -141,6 +158,14 @@ export default function ChatWindow({
 
       <section className="chat-scrollbar min-h-0 flex-1 overflow-y-scroll px-4 py-6">
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
+          {!isAdmin && billingStatus?.usage?.limitToday != null && billingStatus.usage.remainingToday <= 1 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Bạn còn {billingStatus.usage.remainingToday} câu hỏi miễn phí hôm nay.
+              <button type="button" onClick={onOpenBilling} className="ml-2 font-bold text-red-700 underline">
+                Nâng cấp Pro/VIP
+              </button>
+            </div>
+          )}
           {messages.length === 0 ? (
             <div className="flex min-h-[42vh] flex-col items-center justify-center text-center">
               <div className="brand-bg mb-4 flex h-14 w-14 items-center justify-center rounded-md text-white">

@@ -99,6 +99,41 @@ export async function saveAnswer(payload, id) {
   return data.data;
 }
 
+export async function fetchBillingStatus() {
+  const { data } = await api.get("/billing/status");
+  return data.data;
+}
+
+export async function createCheckout(planId) {
+  const { data } = await api.post("/billing/checkout", { planId });
+  return data.data;
+}
+
+export async function confirmPayment(payload) {
+  const { data } = await api.post("/billing/confirm", payload);
+  return data.data;
+}
+
+export async function fetchAdminPlans() {
+  const { data } = await api.get("/admin/plans");
+  return data.data;
+}
+
+export async function updateAdminPlan(id, payload) {
+  const { data } = await api.patch(`/admin/plans/${id}`, payload);
+  return data.data;
+}
+
+export async function fetchAdminMembers() {
+  const { data } = await api.get("/admin/members");
+  return data.data;
+}
+
+export async function updateMemberSubscription(userId, payload) {
+  const { data } = await api.patch(`/admin/members/${encodeURIComponent(userId)}/subscription`, payload);
+  return data.data;
+}
+
 export async function sendChat(payload) {
   const { data } = await api.post("/chat", { ...payload, stream: false }, { timeout: 180000 });
   return data.data;

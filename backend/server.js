@@ -11,6 +11,7 @@ import modelsRouter from "./routes/models.js";
 import uploadsRouter from "./routes/uploads.js";
 import authRouter from "./routes/auth.js";
 import adminRouter from "./routes/admin.js";
+import billingRouter from "./routes/billing.js";
 
 ensureDemoUser();
 
@@ -41,6 +42,7 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/models", modelsRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/billing", billingRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/uploads", uploadsRouter);

@@ -123,11 +123,122 @@ CREATE TABLE IF NOT EXISTS answer_cache (
 
 CREATE INDEX IF NOT EXISTS idx_answer_cache_normalized_question
 ON answer_cache(normalized_question, updated_at);
+
+CREATE TABLE IF NOT EXISTS plans (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  price_vnd INTEGER NOT NULL DEFAULT 0,
+  billing_period_days INTEGER NOT NULL DEFAULT 30,
+  question_limit_daily INTEGER,
+  is_unlimited INTEGER NOT NULL DEFAULT 0,
+  includes_lawyer_review INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL UNIQUE,
+  plan_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (plan_id) REFERENCES plans(id)
+);
+
+CREATE TABLE IF NOT EXISTS usage_daily (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  usage_date TEXT NOT NULL,
+  question_count INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(user_id, usage_date),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  plan_id TEXT NOT NULL,
+  amount_vnd INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'VND',
+  provider TEXT NOT NULL DEFAULT 'visa_demo',
+  status TEXT NOT NULL DEFAULT 'pending',
+  checkout_url TEXT,
+  card_last4 TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (plan_id) REFERENCES plans(id)
+);
 `);
 
 export const DEMO_USER_ID = "demo-user";
 
+function ensureDefaultPlans() {
+  const plans = [
+    {
+      id: "basic",
+      name: "Cơ bản",
+      description: "Miễn phí, giới hạn câu hỏi theo ngày.",
+      price: 0,
+      days: 30,
+      limit: 5,
+      unlimited: 0,
+      lawyer: 0,
+      order: 1
+    },
+    {
+      id: "pro",
+      name: "Pro",
+      description: "Không giới hạn câu hỏi AI.",
+      price: 200000,
+      days: 30,
+      limit: null,
+      unlimited: 1,
+      lawyer: 0,
+      order: 2
+    },
+    {
+      id: "vip",
+      name: "VIP",
+      description: "Không giới hạn câu hỏi, có quyền yêu cầu luật sư review lại câu trả lời qua tin nhắn.",
+      price: 400000,
+      days: 30,
+      limit: null,
+      unlimited: 1,
+      lawyer: 1,
+      order: 3
+    }
+  ];
+
+  plans.forEach((plan) => {
+    db.prepare(`
+      INSERT OR IGNORE INTO plans (
+        id, name, description, price_vnd, billing_period_days,
+        question_limit_daily, is_unlimited, includes_lawyer_review, sort_order
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      plan.id,
+      plan.name,
+      plan.description,
+      plan.price,
+      plan.days,
+      plan.limit,
+      plan.unlimited,
+      plan.lawyer,
+      plan.order
+    );
+  });
+}
+
 export function ensureDemoUser() {
+  ensureDefaultPlans();
+
   db.prepare(`
     INSERT OR IGNORE INTO users (id, name, email)
     VALUES (?, ?, ?)

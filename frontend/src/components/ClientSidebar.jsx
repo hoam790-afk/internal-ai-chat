@@ -1,11 +1,13 @@
-import { LogOut, MessageSquare, Plus } from "lucide-react";
+import { CreditCard, LogOut, MessageSquare, Plus } from "lucide-react";
 
 export default function ClientSidebar({
   conversations,
   activeConversationId,
   onSelectConversation,
   onNewChat,
-  onLogout
+  onLogout,
+  billingStatus,
+  onOpenBilling
 }) {
   return (
     <aside className="hidden w-[300px] shrink-0 border-r border-slate-200 bg-white md:flex md:flex-col">
@@ -22,6 +24,14 @@ export default function ClientSidebar({
       </div>
 
       <div className="p-3">
+        <button
+          type="button"
+          onClick={onOpenBilling}
+          className="mb-3 flex h-11 w-full items-center justify-center gap-2 rounded-md border border-red-200 bg-red-50 text-sm font-semibold text-red-700 hover:bg-red-100"
+        >
+          <CreditCard className="h-4 w-4" />
+          {billingStatus?.subscription?.planName || "Gói dịch vụ"}
+        </button>
         <button
           type="button"
           onClick={onNewChat}

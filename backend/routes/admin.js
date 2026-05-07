@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "../db.js";
 import { requireAdmin } from "../middleware/auth.js";
 import { normalizeQuestion } from "../utils/answers.js";
+import { setSubscription } from "../utils/billing.js";
 
 const router = express.Router();
 
@@ -12,6 +13,22 @@ const saveAnswerSchema = z.object({
   answer: z.string().trim().min(1).max(100000),
   sourceConversationId: z.string().nullish(),
   sourceMessageId: z.string().nullish()
+});
+
+const planUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  description: z.string().trim().max(500).optional(),
+  priceVnd: z.coerce.number().int().min(0).optional(),
+  billingPeriodDays: z.coerce.number().int().min(1).max(3660).optional(),
+  questionLimitDaily: z.coerce.number().int().min(0).nullable().optional(),
+  isUnlimited: z.boolean().optional(),
+  includesLawyerReview: z.boolean().optional(),
+  active: z.boolean().optional()
+});
+
+const memberPlanSchema = z.object({
+  planId: z.string().min(1),
+  days: z.coerce.number().int().min(1).max(3660).optional()
 });
 
 router.use(requireAdmin);
@@ -61,6 +78,103 @@ router.get("/answers", (_req, res) => {
     LIMIT 300
   `).all();
   res.json({ data: rows });
+});
+
+router.get("/plans", (_req, res) => {
+  const rows = db.prepare(`
+    SELECT id, name, description, price_vnd AS priceVnd,
+           billing_period_days AS billingPeriodDays,
+           question_limit_daily AS questionLimitDaily,
+           is_unlimited AS isUnlimited,
+           includes_lawyer_review AS includesLawyerReview,
+           active, sort_order AS sortOrder, updated_at AS updatedAt
+    FROM plans
+    ORDER BY sort_order ASC, price_vnd ASC
+  `).all();
+  res.json({ data: rows });
+});
+
+router.patch("/plans/:id", (req, res) => {
+  const parsed = planUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Dữ liệu gói dịch vụ không hợp lệ." });
+  }
+
+  const current = db.prepare("SELECT * FROM plans WHERE id = ?").get(req.params.id);
+  if (!current) {
+    return res.status(404).json({ error: "Không tìm thấy gói dịch vụ." });
+  }
+
+  const next = {
+    name: parsed.data.name ?? current.name,
+    description: parsed.data.description ?? current.description,
+    priceVnd: parsed.data.priceVnd ?? current.price_vnd,
+    billingPeriodDays: parsed.data.billingPeriodDays ?? current.billing_period_days,
+    questionLimitDaily: Object.prototype.hasOwnProperty.call(parsed.data, "questionLimitDaily")
+      ? parsed.data.questionLimitDaily
+      : current.question_limit_daily,
+    isUnlimited: parsed.data.isUnlimited == null ? current.is_unlimited : Number(parsed.data.isUnlimited),
+    includesLawyerReview: parsed.data.includesLawyerReview == null
+      ? current.includes_lawyer_review
+      : Number(parsed.data.includesLawyerReview),
+    active: parsed.data.active == null ? current.active : Number(parsed.data.active)
+  };
+
+  db.prepare(`
+    UPDATE plans
+    SET name = ?, description = ?, price_vnd = ?, billing_period_days = ?,
+        question_limit_daily = ?, is_unlimited = ?, includes_lawyer_review = ?,
+        active = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    next.name,
+    next.description,
+    next.priceVnd,
+    next.billingPeriodDays,
+    next.questionLimitDaily,
+    next.isUnlimited,
+    next.includesLawyerReview,
+    next.active,
+    req.params.id
+  );
+
+  const row = db.prepare("SELECT * FROM plans WHERE id = ?").get(req.params.id);
+  res.json({ data: row });
+});
+
+router.get("/members", (_req, res) => {
+  const rows = db.prepare(`
+    SELECT u.id, u.name, u.email, u.created_at AS createdAt,
+           s.plan_id AS planId, s.status AS subscriptionStatus,
+           s.started_at AS startedAt, s.expires_at AS expiresAt,
+           p.name AS planName, p.price_vnd AS priceVnd,
+           p.question_limit_daily AS questionLimitDaily,
+           p.is_unlimited AS isUnlimited,
+           COALESCE(ud.question_count, 0) AS usedToday
+    FROM users u
+    LEFT JOIN subscriptions s ON s.user_id = u.id
+    LEFT JOIN plans p ON p.id = s.plan_id
+    LEFT JOIN usage_daily ud ON ud.user_id = u.id AND ud.usage_date = date('now')
+    WHERE u.id != 'demo-user'
+    ORDER BY datetime(u.created_at) DESC
+    LIMIT 500
+  `).all();
+  res.json({ data: rows });
+});
+
+router.patch("/members/:id/subscription", (req, res) => {
+  const parsed = memberPlanSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Dữ liệu thành viên không hợp lệ." });
+  }
+
+  const user = db.prepare("SELECT id FROM users WHERE id = ?").get(req.params.id);
+  if (!user) {
+    return res.status(404).json({ error: "Không tìm thấy thành viên." });
+  }
+
+  const subscription = setSubscription(req.params.id, parsed.data.planId, parsed.data.days);
+  res.json({ data: subscription });
 });
 
 router.post("/answers", (req, res) => {
