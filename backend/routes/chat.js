@@ -36,10 +36,10 @@ const chatSchema = z.object({
   stream: z.boolean().optional().default(false)
 });
 
-const maxCompletionTokens = Math.max(Number(process.env.MAX_COMPLETION_TOKENS || 9000), 9000);
+const maxCompletionTokens = Math.max(Number(process.env.MAX_COMPLETION_TOKENS || 8000), 8000);
 const shipmentExtractionModel = process.env.SHIPMENT_EXTRACTION_MODEL || "openrouter/auto";
 const openRouterTimeoutMs = Math.max(Number(process.env.OPENROUTER_TIMEOUT_MS || 60000), 60000);
-const maxContinuationRounds = Math.max(Number(process.env.MAX_CONTINUATION_ROUNDS || 4), 4);
+const maxContinuationRounds = Math.min(Math.max(Number(process.env.MAX_CONTINUATION_ROUNDS || 2), 1), 2);
 const fallbackModels = (process.env.FALLBACK_MODELS ||
   "google/gemma-4-26b-a4b-it:free,openrouter/free,inclusionai/ling-2.6-1t:free,liquid/lfm-2.5-1.2b-instruct:free")
   .split(",")
@@ -277,28 +277,21 @@ function looksIncompleteAnswer(content = "") {
   const text = content.trim();
   if (!text) return true;
 
-  const tail = text.slice(-700).toLowerCase();
+  const tail = text.slice(-500).toLowerCase();
   const hasClosingSignal = [
     "kết luận",
     "ket luan",
     "tóm lại",
     "tom lai",
-    "lưu ý cuối",
-    "luu y cuoi",
-    "khuyến nghị",
-    "khuyen nghi",
     "trên đây",
-    "tren day"
+    "tren day",
+    "vui lòng",
+    "vui long"
   ].some((marker) => tail.includes(marker));
   const endsCleanly = /[.!?。)”"'`*]$/.test(text);
   const danglingListOrSentence = /(\n\s*[-*]\s*|\n\s*\d+\.\s*|[:;,]|\b(và|hoặc|gồm|như|theo|với|của|cho|là|and|or)\s*)$/i.test(text);
-  const requiredCoverage = [
-    /hs\s*code|mã\s*hs/i,
-    /thuế|vat|gtgt/i,
-    /chính sách|giấy phép|kiểm tra|quản lý|nhãn|sở hữu/i
-  ].filter((pattern) => pattern.test(text)).length;
 
-  return !endsCleanly || danglingListOrSentence || !hasClosingSignal || requiredCoverage < 2;
+  return !endsCleanly || danglingListOrSentence || (text.length > 2500 && !hasClosingSignal);
 }
 
 function mergeUsage(total = {}, next = {}) {
@@ -331,9 +324,8 @@ async function completeChatWithContinuation(requestBody) {
         content: [
           "Cau tra loi vua roi chua hoan tat hoac bi cat ngang.",
           "Hay viet tiep tu dung noi dung dang dang do, khong lap lai phan da tra loi.",
-          "Phai hoan thanh day du cac muc trong system instruction/prompts, dac biet: HS code, hang cam, giay phep, kiem tra chat luong/kiem dich/ATTP, nhan hang hoa, so huu tri tue, va tong ket neu phu hop.",
-          "Neu cau hoi co hoi thue/VAT, bat buoc neu thue NK uu dai neu xac dinh duoc, VAT/GTGT va can cu ap dung hoac luu y can tra cuu bieu thue hien hanh.",
-          "Ket thuc bang cau ket luan ro rang."
+          "Chi bo sung cac muc con thieu theo system instruction/prompts, khong mo rong them ngoai yeu cau.",
+          "Neu noi dung da du thi chi viet mot ket luan ngan gon va dung lai."
         ].join("\n")
       }
     ];
