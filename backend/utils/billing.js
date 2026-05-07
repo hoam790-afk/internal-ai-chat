@@ -11,6 +11,24 @@ function addDays(days) {
   return date.toISOString();
 }
 
+export function resolveBillingCycle(cycle = "monthly") {
+  if (cycle === "yearly") {
+    return {
+      billingCycle: "yearly",
+      durationDays: 365,
+      multiplier: 12,
+      label: "1 năm"
+    };
+  }
+
+  return {
+    billingCycle: "monthly",
+    durationDays: 30,
+    multiplier: 1,
+    label: "1 tháng"
+  };
+}
+
 export function ensureUserAccount(user) {
   if (!user?.id) return null;
 
@@ -22,8 +40,8 @@ export function ensureUserAccount(user) {
   const subscription = db.prepare("SELECT id FROM subscriptions WHERE user_id = ?").get(user.id);
   if (!subscription && user.role !== "admin") {
     db.prepare(`
-      INSERT INTO subscriptions (id, user_id, plan_id, status, started_at, expires_at)
-      VALUES (?, ?, ?, 'active', CURRENT_TIMESTAMP, ?)
+      INSERT INTO subscriptions (id, user_id, plan_id, billing_cycle, status, started_at, expires_at)
+      VALUES (?, ?, ?, 'monthly', 'active', CURRENT_TIMESTAMP, ?)
     `).run(nanoid(), user.id, "basic", addDays(3650));
   }
 
@@ -76,7 +94,8 @@ export function incrementUsage(userId, date = todayKey()) {
 
 export function getSubscription(userId) {
   const row = db.prepare(`
-    SELECT s.id, s.user_id AS userId, s.plan_id AS planId, s.status,
+    SELECT s.id, s.user_id AS userId, s.plan_id AS planId,
+           s.billing_cycle AS billingCycle, s.status,
            s.started_at AS startedAt, s.expires_at AS expiresAt,
            p.name AS planName, p.price_vnd AS priceVnd,
            p.billing_period_days AS billingPeriodDays,
@@ -143,41 +162,48 @@ export function assertCanAsk(user) {
   return { allowed: true, billing: status };
 }
 
-export function setSubscription(userId, planId, days) {
+export function setSubscription(userId, planId, billingCycle = "monthly") {
   const plan = getPlan(planId);
   if (!plan) throw new Error("Plan not found");
-  const expiresAt = addDays(days || plan.billingPeriodDays);
+  const cycle = resolveBillingCycle(billingCycle);
+  const expiresAt = addDays(cycle.durationDays);
   const existing = getSubscription(userId);
 
   if (existing) {
     db.prepare(`
       UPDATE subscriptions
-      SET plan_id = ?, status = 'active', started_at = CURRENT_TIMESTAMP,
+      SET plan_id = ?, billing_cycle = ?, status = 'active', started_at = CURRENT_TIMESTAMP,
           expires_at = ?, updated_at = CURRENT_TIMESTAMP
       WHERE user_id = ?
-    `).run(planId, expiresAt, userId);
+    `).run(planId, cycle.billingCycle, expiresAt, userId);
   } else {
     db.prepare(`
-      INSERT INTO subscriptions (id, user_id, plan_id, status, started_at, expires_at)
-      VALUES (?, ?, ?, 'active', CURRENT_TIMESTAMP, ?)
-    `).run(nanoid(), userId, planId, expiresAt);
+      INSERT INTO subscriptions (id, user_id, plan_id, billing_cycle, status, started_at, expires_at)
+      VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, ?)
+    `).run(nanoid(), userId, planId, cycle.billingCycle, expiresAt);
   }
 
   return getSubscription(userId);
 }
 
-export function createPayment(userId, planId) {
+export function createPayment(userId, planId, billingCycle = "monthly") {
   const plan = getPlan(planId);
   if (!plan) throw new Error("Plan not found");
+  const cycle = resolveBillingCycle(billingCycle);
+  const amountVnd = Number(plan.priceVnd || 0) * cycle.multiplier;
   const paymentId = nanoid();
   db.prepare(`
-    INSERT INTO payments (id, user_id, plan_id, amount_vnd, provider, status, checkout_url)
-    VALUES (?, ?, ?, ?, 'visa_demo', 'pending', ?)
-  `).run(paymentId, userId, planId, plan.priceVnd, `/billing/checkout/${paymentId}`);
+    INSERT INTO payments (
+      id, user_id, plan_id, amount_vnd, provider, billing_cycle,
+      duration_days, status, checkout_url
+    )
+    VALUES (?, ?, ?, ?, 'visa_demo', ?, ?, 'pending', ?)
+  `).run(paymentId, userId, planId, amountVnd, cycle.billingCycle, cycle.durationDays, `/billing/checkout/${paymentId}`);
 
   return db.prepare(`
     SELECT id, user_id AS userId, plan_id AS planId, amount_vnd AS amountVnd,
-           currency, provider, status, checkout_url AS checkoutUrl, created_at AS createdAt
+           currency, provider, billing_cycle AS billingCycle, duration_days AS durationDays,
+           status, checkout_url AS checkoutUrl, created_at AS createdAt
     FROM payments WHERE id = ?
   `).get(paymentId);
 }
@@ -190,6 +216,6 @@ export function markPaymentPaid(paymentId, cardLast4 = "") {
     SET status = 'paid', card_last4 = ?, paid_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(cardLast4 || null, paymentId);
-  setSubscription(payment.user_id, payment.plan_id);
+  setSubscription(payment.user_id, payment.plan_id, payment.billing_cycle);
   return payment;
 }

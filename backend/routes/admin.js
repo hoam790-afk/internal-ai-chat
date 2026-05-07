@@ -28,7 +28,7 @@ const planUpdateSchema = z.object({
 
 const memberPlanSchema = z.object({
   planId: z.string().min(1),
-  days: z.coerce.number().int().min(1).max(3660).optional()
+  billingCycle: z.enum(["monthly", "yearly"]).default("monthly")
 });
 
 router.use(requireAdmin);
@@ -145,7 +145,7 @@ router.patch("/plans/:id", (req, res) => {
 router.get("/members", (_req, res) => {
   const rows = db.prepare(`
     SELECT u.id, u.name, u.email, u.created_at AS createdAt,
-           s.plan_id AS planId, s.status AS subscriptionStatus,
+           s.plan_id AS planId, s.billing_cycle AS billingCycle, s.status AS subscriptionStatus,
            s.started_at AS startedAt, s.expires_at AS expiresAt,
            p.name AS planName, p.price_vnd AS priceVnd,
            p.question_limit_daily AS questionLimitDaily,
@@ -173,7 +173,7 @@ router.patch("/members/:id/subscription", (req, res) => {
     return res.status(404).json({ error: "Không tìm thấy thành viên." });
   }
 
-  const subscription = setSubscription(req.params.id, parsed.data.planId, parsed.data.days);
+  const subscription = setSubscription(req.params.id, parsed.data.planId, parsed.data.billingCycle);
   res.json({ data: subscription });
 });
 

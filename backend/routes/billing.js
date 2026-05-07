@@ -13,7 +13,8 @@ import {
 const router = express.Router();
 
 const checkoutSchema = z.object({
-  planId: z.string().min(1)
+  planId: z.string().min(1),
+  billingCycle: z.enum(["monthly", "yearly"]).default("monthly")
 });
 
 const confirmSchema = z.object({
@@ -45,7 +46,7 @@ router.post("/checkout", (req, res) => {
     return res.status(400).json({ error: "Gói miễn phí không cần thanh toán." });
   }
 
-  const payment = createPayment(user.id, plan.id);
+  const payment = createPayment(user.id, plan.id, parsed.data.billingCycle);
   res.status(201).json({ data: { payment, plan } });
 });
 

@@ -12,8 +12,11 @@ export default function BillingPanel({ open, onClose, billingStatus, onCheckout,
   const [cardNumber, setCardNumber] = useState("");
   const [processing, setProcessing] = useState(false);
   const [notice, setNotice] = useState("");
+  const [billingCycle, setBillingCycle] = useState("monthly");
   const plans = billingStatus?.plans || [];
   const currentPlanId = billingStatus?.subscription?.planId;
+  const cycleMultiplier = billingCycle === "yearly" ? 12 : 1;
+  const cycleLabel = billingCycle === "yearly" ? "1 nam" : "1 thang";
 
   if (!open) return null;
 
@@ -22,7 +25,7 @@ export default function BillingPanel({ open, onClose, billingStatus, onCheckout,
     setSelectedPlan(plan);
     setPayment(null);
     if (plan.priceVnd <= 0) return;
-    const result = await onCheckout(plan.id);
+    const result = await onCheckout(plan.id, billingCycle);
     setPayment(result.payment);
   }
 
@@ -86,6 +89,35 @@ export default function BillingPanel({ open, onClose, billingStatus, onCheckout,
             </div>
           </div>
 
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-100 bg-red-50 p-3">
+            <div>
+              <div className="text-sm font-bold text-slate-950">Chu ky thanh toan</div>
+              <div className="text-xs text-slate-600">Chon 1 thang hoac 1 nam, han goi se tu dong cap nhat sau khi thanh toan Visa.</div>
+            </div>
+            <div className="grid grid-cols-2 rounded-md bg-white p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => {
+                  setBillingCycle("monthly");
+                  setPayment(null);
+                }}
+                className={`rounded px-4 py-2 text-sm font-bold ${billingCycle === "monthly" ? "brand-bg text-white" : "text-slate-600"}`}
+              >
+                1 thang
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBillingCycle("yearly");
+                  setPayment(null);
+                }}
+                className={`rounded px-4 py-2 text-sm font-bold ${billingCycle === "yearly" ? "brand-bg text-white" : "text-slate-600"}`}
+              >
+                1 nam
+              </button>
+            </div>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-3">
             {plans.map((plan) => {
               const active = currentPlanId === plan.id;
@@ -108,9 +140,9 @@ export default function BillingPanel({ open, onClose, billingStatus, onCheckout,
                   <h3 className="text-lg font-bold text-slate-950">{plan.name}</h3>
                   <p className="mt-1 min-h-12 text-sm text-slate-600">{plan.description}</p>
                   <div className="mt-4 text-2xl font-black text-slate-950">
-                    {plan.priceVnd ? formatVnd(plan.priceVnd) : "Miễn phí"}
+                    {plan.priceVnd ? formatVnd(Number(plan.priceVnd) * cycleMultiplier) : "Miễn phí"}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">/{plan.billingPeriodDays} ngày / user</div>
+                  <div className="mt-1 text-xs text-slate-500">/{cycleLabel} / user</div>
                   <div className="mt-4 text-sm font-semibold text-red-700">
                     {plan.isUnlimited ? "Không giới hạn câu hỏi" : `${plan.questionLimitDaily || 5} câu/ngày`}
                   </div>

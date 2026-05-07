@@ -75,8 +75,8 @@ export default function AdminPanel({ open }) {
     setPlans(await fetchAdminPlans());
   }
 
-  async function handleMemberPlan(member, planId) {
-    await updateMemberSubscription(member.id, { planId });
+  async function handleMemberPlan(member, planId, billingCycle = "monthly") {
+    await updateMemberSubscription(member.id, { planId, billingCycle });
     setMembers(await fetchAdminMembers());
   }
 
@@ -172,6 +172,7 @@ export default function AdminPanel({ open }) {
                       <th>Hạn</th>
                       <th>Hôm nay</th>
                       <th>Đổi gói</th>
+                      <th>Chu kỳ</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -190,10 +191,20 @@ export default function AdminPanel({ open }) {
                         <td>
                           <select
                             value={member.planId || "basic"}
-                            onChange={(event) => handleMemberPlan(member, event.target.value)}
+                            onChange={(event) => handleMemberPlan(member, event.target.value, member.billingCycle || "monthly")}
                             className="rounded-md border border-slate-300 px-2 py-2 text-sm"
                           >
                             {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+                          </select>
+                        </td>
+                        <td>
+                          <select
+                            value={member.billingCycle || "monthly"}
+                            onChange={(event) => handleMemberPlan(member, member.planId || "basic", event.target.value)}
+                            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                          >
+                            <option value="monthly">1 tháng</option>
+                            <option value="yearly">1 năm</option>
                           </select>
                         </td>
                       </tr>
@@ -214,13 +225,9 @@ export default function AdminPanel({ open }) {
                     onBlur={(event) => handlePlanChange(plan, "priceVnd", Number(event.target.value))}
                     className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                   />
-                  <label className="mt-3 block text-xs font-semibold uppercase text-slate-500">Thời hạn ngày</label>
-                  <input
-                    type="number"
-                    defaultValue={plan.billingPeriodDays}
-                    onBlur={(event) => handlePlanChange(plan, "billingPeriodDays", Number(event.target.value))}
-                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  />
+                  <div className="mt-3 rounded-md bg-red-50 p-3 text-xs text-slate-700">
+                    Chu kỳ gói được set theo thanh toán: 1 tháng hoặc 1 năm. Khi client thanh toán, hạn gói tự nhảy theo chu kỳ đã chọn.
+                  </div>
                   <label className="mt-3 block text-xs font-semibold uppercase text-slate-500">Giới hạn câu/ngày</label>
                   <input
                     type="number"

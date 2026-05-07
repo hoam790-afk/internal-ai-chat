@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL UNIQUE,
   plan_id TEXT NOT NULL,
+  billing_cycle TEXT NOT NULL DEFAULT 'monthly',
   status TEXT NOT NULL DEFAULT 'active',
   started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at TEXT,
@@ -166,6 +167,8 @@ CREATE TABLE IF NOT EXISTS payments (
   amount_vnd INTEGER NOT NULL,
   currency TEXT NOT NULL DEFAULT 'VND',
   provider TEXT NOT NULL DEFAULT 'visa_demo',
+  billing_cycle TEXT NOT NULL DEFAULT 'monthly',
+  duration_days INTEGER NOT NULL DEFAULT 30,
   status TEXT NOT NULL DEFAULT 'pending',
   checkout_url TEXT,
   card_last4 TEXT,
@@ -175,6 +178,18 @@ CREATE TABLE IF NOT EXISTS payments (
   FOREIGN KEY (plan_id) REFERENCES plans(id)
 );
 `);
+
+try {
+  db.exec("ALTER TABLE subscriptions ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly'");
+} catch {}
+
+try {
+  db.exec("ALTER TABLE payments ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly'");
+} catch {}
+
+try {
+  db.exec("ALTER TABLE payments ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 30");
+} catch {}
 
 export const DEMO_USER_ID = "demo-user";
 

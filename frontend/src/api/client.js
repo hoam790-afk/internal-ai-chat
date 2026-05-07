@@ -104,8 +104,8 @@ export async function fetchBillingStatus() {
   return data.data;
 }
 
-export async function createCheckout(planId) {
-  const { data } = await api.post("/billing/checkout", { planId });
+export async function createCheckout(planId, billingCycle = "monthly") {
+  const { data } = await api.post("/billing/checkout", { planId, billingCycle });
   return data.data;
 }
 
